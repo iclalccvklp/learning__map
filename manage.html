@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Konu Yönetimi</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page">
+
+    <div class="intro">
+      <h1>Konu Yönetimi</h1>
+      <p>Konu ekle, düzenle, sil. Ana sayfa otomatik güncellenecek.</p>
+      <a href="index.html">← Ana sayfaya dön</a>
+    </div>
+
+    <!-- ✅ FORM -->
+<form id="form" class="card form" style="width:min(900px,92vw); margin:20px auto;">
+      <input type="hidden" id="topicId" value="" />
+
+      <label>Başlık</label>
+      <input id="title" required placeholder="Örn: Docker Compose Pratiği" />
+
+      <label>Durum</label>
+      <select id="status">
+        <option value="done">Öğrendim</option>
+        <option value="now" selected>Öğreniyorum</option>
+        <option value="next">Planlıyorum</option>
+      </select>
+
+      <label>İlerleme (%)</label>
+      <input id="progress" type="number" min="0" max="100" value="0" />
+
+      <label>Tahmini süre (dk)</label>
+      <input id="minutes" type="number" min="0" step="5" value="0" />
+
+      <!-- ✅ SENİN EKLEYECEĞİN -->
+      <label>Bugün kaç dk çalıştım?</label>
+      <input id="spent" type="number" min="0" step="5" placeholder="Örn: 25" />
+
+      <label>Kısa açıklama</label>
+      <input id="short" placeholder="1 satırlık açıklama" />
+
+      <label>Detaylar (her satıra bir madde)</label>
+      <textarea id="details" rows="4" placeholder="madde 1&#10;madde 2"></textarea>
+
+      <label>Etiketler (virgülle)</label>
+      <input id="tags" placeholder="docker, devops, backend" />
+
+      <div style="display:flex;gap:10px;margin-top:12px;">
+        <button id="saveBtn" type="submit">Kaydet</button>
+        <button id="cancelEdit" type="button">İptal</button>
+      </div>
+    </form>
+
+    <!-- ✅ LİSTE -->
+<div id="list" style="width:min(900px,92vw); margin:0 auto;"></div>
+
+  </div>
+
+  <!-- ✅ SCRIPT -->
+  <script type="module">
+    import { loadTopics, saveTopics, normalizeTopic, uid } from "./app.js";
+
+    const el = (id) => document.getElementById(id);
+
+    const form = el("form");
+    const listEl = el("list");
+
+    const topicIdEl = el("topicId");
+    const titleEl = el("title");
+    const statusEl = el("status");
+    const progressEl = el("progress");
+    const minutesEl = el("minutes");
+    const spentEl = el("spent");
+    const shortEl = el("short");
+    const detailsEl = el("details");
+    const tagsEl = el("tags");
+
+    const cancelEditBtn = el("cancelEdit");
+
+    function clearForm() {
+      topicIdEl.value = "";
+      titleEl.value = "";
+      statusEl.value = "now";
+      progressEl.value = 0;
+      minutesEl.value = 0;
+      spentEl.value = "";   // ✅ önemli
+      shortEl.value = "";
+      detailsEl.value = "";
+      tagsEl.value = "";
+    }
+
+    function renderList() {
+      const topics = loadTopics();
+      listEl.innerHTML = topics.map(t => `
+        <div class="card ${t.status}" style="margin:10px auto;max-width:900px;">
+          <h3>${t.title}</h3>
+          <div style="opacity:.8;font-size:13px;">
+            Durum: ${t.status} • %${t.progress} • Süre: ${t.minutes || 0}dk • Harcanan: ${t.spent || 0}dk
+          </div>
+        <div class="row-actions">
+  <button class="btn btn-edit" data-edit="${t.id}" type="button">✏️ Düzenle</button>
+  <button class="btn btn-del" data-del="${t.id}" type="button">🗑️ Sil</button>
+</div>
+
+        </div>
+      `).join("");
+
+      // buton olayları
+      listEl.querySelectorAll("[data-edit]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.edit;
+          const topics = loadTopics();
+          const t = topics.find(x => x.id === id);
+          if (!t) return;
+
+          topicIdEl.value = t.id;
+          titleEl.value = t.title || "";
+          statusEl.value = t.status || "now";
+          progressEl.value = t.progress ?? 0;
+          minutesEl.value = t.minutes ?? 0;
+          spentEl.value = ""; // ✅ “bugün” inputu her seferinde boş
+          shortEl.value = t.short || "";
+          detailsEl.value = (t.details || []).join("\n");
+          tagsEl.value = (t.tags || []).join(", ");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      });
+
+      listEl.querySelectorAll("[data-del]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.del;
+          const topics = loadTopics().filter(x => x.id !== id);
+          saveTopics(topics);
+          renderList();
+        });
+      });
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const topics = loadTopics();
+      const id = topicIdEl.value || uid();
+
+      const base = {
+        id,
+        title: titleEl.value,
+        status: statusEl.value,
+        progress: Number(progressEl.value || 0),
+        minutes: Number(minutesEl.value || 0),
+        short: shortEl.value,
+        details: detailsEl.value.split("\n").map(s => s.trim()).filter(Boolean),
+        tags: tagsEl.value.split(",").map(s => s.trim()).filter(Boolean),
+      };
+
+      // ✅ BUGÜN ÇALIŞILAN DAKİKAYI BİRİKTİR
+const addRaw = spentEl.value === "" ? 0 : Number(spentEl.value);
+const add = Number.isFinite(addRaw) ? Math.max(0, addRaw) : 0;
+      base.spent = (topics.find(x => x.id === id)?.spent || 0) + add;
+// Eğer "Öğrendim" seçildiyse: progress=100 ve spent=minutes olsun
+if (base.status === "done") {
+  base.progress = 100;
+  base.spent = base.minutes; 
+}
+
+      const topic = normalizeTopic(base);
+
+      const i = topics.findIndex(x => x.id === id);
+      if (i >= 0) topics[i] = topic;
+      else topics.push(topic);
+
+      saveTopics(topics);
+      clearForm();
+      renderList();
+    });
+
+    cancelEditBtn.addEventListener("click", clearForm);
+
+    renderList();
+  </script>
+</body>
+</html>

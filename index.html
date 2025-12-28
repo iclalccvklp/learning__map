@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Öğrenme Haritam</title>
+
+  <!-- Mobil uyum -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="page">
+
+    <div class="intro">
+      <h1>Öğrenme Haritam</h1>
+      <p>Ne öğrendim, ne öğreniyorum, sırada ne var.</p>
+    </div>
+    <div class="pick">
+  <button id="pickBtn" class="nav-btn">🎯 Bugün Ne Çalışayım?</button>
+
+  <div id="pickCard" class="pick-card" style="display:none;">
+    <div class="pick-title" id="pickTitle"></div>
+    <div class="pick-meta" id="pickMeta"></div>
+    <div class="pick-desc" id="pickDesc"></div>
+  </div>
+</div>
+
+    <div class="nav-actions">
+  <a href="manage.html" class="nav-btn">➕ Konu Yönetimi</a>
+</div>
+
+<div class="stats" id="stats">
+  <div class="stat">
+    <div class="k">Toplam</div>
+    <div class="v" id="stTotal">0</div>
+  </div>
+
+  <div class="stat">
+    <div class="k">Öğrendim</div>
+    <div class="v" id="stDone">0</div>
+  </div>
+
+  <div class="stat">
+    <div class="k">Öğreniyorum</div>
+    <div class="v" id="stNow">0</div>
+  </div>
+
+  <div class="stat">
+    <div class="k">Planlıyorum</div>
+    <div class="v" id="stNext">0</div>
+  </div>
+</div>
+
+    <div class="controls">
+      <input id="q" type="search" placeholder="Konu ara… (örn: CSS, Grid, Dokümantasyon)">
+      <div class="filters">
+        <button class="fbtn active" data-filter="all">Hepsi</button>
+        <button class="fbtn" data-filter="done">Öğrendim</button>
+        <button class="fbtn" data-filter="now">Öğreniyorum</button>
+        <button class="fbtn" data-filter="next">Planlıyorum</button>
+      </div>
+    </div>
+<div class="board">
+
+  <section class="col">
+    <div class="col-head">
+      <h2>✅ Öğrendim</h2>
+      <span class="badge">0</span>
+    </div>
+
+    <!-- JS dolduracak -->
+    <div id="colDone"></div>
+  </section>
+
+  <section class="col">
+    <div class="col-head">
+      <h2>🔄 Öğreniyorum</h2>
+      <span class="badge">0</span>
+    </div>
+
+    <!-- JS dolduracak -->
+    <div id="colNow"></div>
+  </section>
+
+  <section class="col">
+    <div class="col-head">
+      <h2>🗓️ Planlıyorum</h2>
+      <span class="badge">0</span>
+    </div>
+
+    <!-- JS dolduracak -->
+    <div id="colNext"></div>
+  </section>
+
+</div>
+
+
+
+
+  </div>
+
+  <!-- ✅ MODAL (SCRIPT DIŞINDA) -->
+  <div class="modal" id="modal" aria-hidden="true">
+    <div class="modal-backdrop" id="modalClose"></div>
+
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <button class="modal-x" id="modalX" aria-label="Kapat">✕</button>
+
+      <div class="modal-status" id="modalStatus"></div>
+      <h3 class="modal-title" id="modalTitle">Başlık</h3>
+      <p class="modal-desc" id="modalDesc">Açıklama</p>
+      <div class="modal-details" id="modalDetails"></div>
+    </div>
+  </div>
+
+  <!-- ✅ SCRIPT EN ALTTA -->
+
+  <script type="module">
+import { loadTopics } from "./app.js";
+
+/* ---------- yardımcılar ---------- */
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function initProgress() {
+  document.querySelectorAll(".progress").forEach(p => {
+    const value = parseInt(p.dataset.p, 10) || 0;
+    const bar = p.querySelector(".bar");
+    const percent = p.querySelector(".percent");
+    const safe = Math.max(0, Math.min(100, value));
+
+    if (percent) percent.textContent = "%" + safe;
+    if (bar) bar.style.width = safe + "%";
+  });
+}
+
+/* ---------- DOM elemanları ---------- */
+const searchInput = document.getElementById("q");
+const filterButtons = Array.from(document.querySelectorAll(".fbtn"));
+const cols = Array.from(document.querySelectorAll(".col"));
+
+const stTotal = document.getElementById("stTotal");
+const stDone  = document.getElementById("stDone");
+const stNow   = document.getElementById("stNow");
+const stNext  = document.getElementById("stNext");
+const stMins  = document.getElementById("stMins"); // yoksa null olur, sorun değil
+
+/* ---------- durum ---------- */
+let activeFilter = "all";
+let cards = [];
+
+/* ---------- render ---------- */
+function renderBoard() {
+  const topics = loadTopics();
+
+  const colDone = document.getElementById("colDone");
+  const colNow  = document.getElementById("colNow");
+  const colNext = document.getElementById("colNext");
+
+  colDone.innerHTML = "";
+  colNow.innerHTML  = "";
+  colNext.innerHTML = "";
+
+  topics.forEach(t => {
+    const card = document.createElement("article");
+    card.className = `card ${t.status} show`; // show -> görünür
+
+    card.innerHTML = `
+      <h3>${escapeHtml(t.title)}</h3>
+
+      <div class="progress" data-p="${t.progress}">
+        <div class="bar"></div>
+        <span class="percent"></span>
+      </div>
+${t.minutes ? `
+  <div class="time">
+    ⏱ ${Math.max(0, t.minutes - (t.spent || 0))} dk kaldı
+  </div>
+` : ""}
+      ${t.short ? `<p class="short">${escapeHtml(t.short)}</p>` : ""}
+
+      ${t.details?.length ? `
+        <div class="details">
+          <ul>${t.details.map(d => `<li>${escapeHtml(d)}</li>`).join("")}</ul>
+        </div>` : ""}
+    `;
+
+    if (t.status === "done") colDone.appendChild(card);
+    else if (t.status === "now") colNow.appendChild(card);
+    else colNext.appendChild(card);
+  });
+
+  // render sonrası kart listesini güncelle
+  cards = Array.from(document.querySelectorAll(".card"));
+
+  // progress doldur
+  initProgress();
+
+  // filtre/rozet/istatistik güncelle
+  applyFilters();
+
+  // modal click bağla
+  bindCardClicks();
+    // ✅ Bugün ne çalışayım kutusunu güncelle
+  updatePick();
+
+}
+
+/* ---------- filtre ---------- */
+function matchesSearch(card, q) {
+  if (!q) return true;
+  return card.innerText.toLowerCase().includes(q);
+}
+
+function matchesFilter(card) {
+  if (activeFilter === "all") return true;
+  return card.classList.contains(activeFilter);
+}
+
+function updateBadges() {
+  cols.forEach(col => {
+    const badge = col.querySelector(".badge");
+    const visibleCards = Array.from(col.querySelectorAll(".card"))
+      .filter(c => c.style.display !== "none");
+    badge.textContent = String(visibleCards.length);
+  });
+}
+
+function updateStats() {
+  const visible = cards.filter(c => c.style.display !== "none");
+  const done = visible.filter(c => c.classList.contains("done")).length;
+  const now  = visible.filter(c => c.classList.contains("now")).length;
+  const next = visible.filter(c => c.classList.contains("next")).length;
+
+  if (stTotal) stTotal.textContent = String(visible.length);
+  if (stDone)  stDone.textContent  = String(done);
+  if (stNow)   stNow.textContent   = String(now);
+  if (stNext)  stNext.textContent  = String(next);
+    // ✅ Kalan Süre (dk) hesapla
+  const mins = visible
+    .filter(c => !c.classList.contains("done"))
+    .reduce((sum, c) => {
+      const t = c.querySelector(".time")?.innerText || ""; // "⏱ 60 dk"
+      const m = parseInt(t.replace(/\D/g, ""), 10) || 0;   // 60
+      return sum + m;
+    }, 0);
+
+  if (stMins) stMins.textContent = mins + " dk";
+
+}
+
+function applyFilters() {
+  const q = (searchInput.value || "").trim().toLowerCase();
+
+  cards.forEach(card => {
+    const ok = matchesFilter(card) && matchesSearch(card, q);
+    card.style.display = ok ? "" : "none";
+  });
+
+  updateBadges();
+  updateStats();
+}
+
+/* ---------- modal ---------- */
+const modal = document.getElementById("modal");
+const modalClose = document.getElementById("modalClose");
+const modalX = document.getElementById("modalX");
+const modalStatus = document.getElementById("modalStatus");
+const modalTitle = document.getElementById("modalTitle");
+const modalDesc = document.getElementById("modalDesc");
+const modalDetails = document.getElementById("modalDetails");
+
+function statusLabel(card) {
+  if (card.classList.contains("done")) return "ÖĞRENDİM ✅";
+  if (card.classList.contains("now")) return "ÖĞRENİYORUM 🔄";
+  if (card.classList.contains("next")) return "PLANLIYORUM 🗓️";
+  return "DETAY";
+}
+
+function openModalFromCard(card) {
+  const title = card.querySelector("h3")?.innerText || "Başlık";
+  const desc = card.querySelector("p.short")?.innerText || "";
+  const details = card.querySelector(".details")?.innerHTML || "";
+
+  modalStatus.textContent = statusLabel(card);
+  modalTitle.textContent = title;
+  modalDesc.textContent = desc;
+
+  if (details) {
+    modalDetails.innerHTML = details;
+    modalDetails.style.display = "";
+  } else {
+    modalDetails.innerHTML = "";
+    modalDetails.style.display = "none";
+  }
+
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeModal() {
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function bindCardClicks() {
+  // eski listener tekrar eklenmesin diye clone yapmıyoruz, basitçe yeniden bağlayalım:
+  cards.forEach(card => {
+    card.style.cursor = "pointer";
+    card.onclick = () => openModalFromCard(card);
+  });
+}
+
+modalClose?.addEventListener("click", closeModal);
+modalX?.addEventListener("click", closeModal);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModal();
+});
+
+/* ---------- events ---------- */
+filterButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    filterButtons.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeFilter = btn.dataset.filter || "all";
+    applyFilters();
+  });
+});
+
+searchInput.addEventListener("input", applyFilters);
+
+/* ---------- başlat ---------- */
+renderBoard();
+function labelStatus(s){
+  if (s === "done") return "✅ Öğrendim";
+  if (s === "now")  return "🔄 Öğreniyorum";
+  return "🗓️ Planlıyorum";
+}
+
+function updatePick() {
+  const btn = document.getElementById("pickBtn");
+  const card = document.getElementById("pickCard");
+  const title = document.getElementById("pickTitle");
+  const meta = document.getElementById("pickMeta");
+  const desc = document.getElementById("pickDesc");
+
+  if (!btn || !card) return;
+
+  const topics = loadTopics().filter(t => t.status !== "done"); // öğreniyorum + planlıyorum
+  if (!topics.length) {
+    card.style.display = "none";
+    btn.onclick = () => alert("Öneri için 'Öğreniyorum' veya 'Planlıyorum' içinde en az 1 konu olmalı.");
+    return;
+  }
+
+  function pickOne() {
+    const t = topics[Math.floor(Math.random() * topics.length)];
+    card.style.display = "";
+    title.textContent = t.title || "Başlıksız";
+    meta.textContent = `${labelStatus(t.status)} • %${t.progress ?? 0}`;
+    desc.textContent = t.short || "Kısa açıklama yok. (manage sayfasından ekleyebilirsin)";
+  }
+
+  btn.onclick = pickOne;
+}
+
+</script>
+
+</body>
+</html>
